@@ -1,7 +1,4 @@
 use rand::Rng;
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::WindowCanvas;
 use crate::consts::PIXEL_SIZE;
 
 const CHIP8_FONT_SET: [u8; 80] = [
@@ -28,8 +25,13 @@ pub struct Chip8 {
     cpu_register: [u8; 0x10],
     i_register: u16,
     program_counter: u16,
-    gfx: [u8; 0x800],
-    pub(crate) is_draw: bool
+    pub(crate) gfx: [u8; 0x800],
+    stack: [u16; 0xC],
+    stack_pointer: usize,
+    delay_timer: u8,
+    sound_timer: u8,
+    pub is_draw: bool,
+    pub keyboard_input: Option<u8>
 }
 
 impl Chip8 {
@@ -46,8 +48,17 @@ impl Chip8 {
             i_register: 0x0,
             program_counter: 0x200,
             gfx: [0; 0x800],
-            is_draw: false
+            is_draw: false,
+            stack: [0; 0xC],
+            stack_pointer: 0,
+            delay_timer: 0,
+            sound_timer: 0,
+            keyboard_input: None
         }
+    }
+
+    pub fn set_keyboard_input(&mut self, input: Option<u8>) {
+        self.keyboard_input = input;
     }
 
     fn clear_screen(&mut self) {
@@ -64,8 +75,14 @@ impl Chip8 {
         self.program_counter += 2;
     }
 
+    fn skip_next_instruction(&mut self) {
+        self.program_counter += 4;
+    }
+
     pub fn cycle(&mut self) {
         let op_code = u16::from(self.memory[self.program_counter as usize]) << 8 | u16::from(self.memory[self.program_counter as usize + 1]);
+        let x_index = ((op_code & 0x0F00) >> 8) as usize;
+        let y_index = ((op_code & 0x00F0) >> 4) as usize;
 
         match op_code & 0xF000 {
             0x0000 => match op_code & 0x00FF {
@@ -74,23 +91,47 @@ impl Chip8 {
                     self.increment_program_counter();
                 },
                 0x00EE => {
-
+                    self.program_counter = self.stack[self.stack_pointer];
+                    self.stack_pointer -= 1;
                 }
-                _ => {}
+                _ => { println!("Unknown code: {}", op_code) }
             },
             0x1000 => {
                 self.program_counter = op_code & 0x0FFF;
             },
+            0x2000 => {
+                self.stack_pointer += 1;
+                self.stack[self.stack_pointer] = self.program_counter + 2;
+                self.program_counter = op_code & 0x0FFF;
+            },
+            0x3000 => {
+                if self.cpu_register[x_index] == ((op_code & 0x00FF) as u8) {
+                    self.skip_next_instruction();
+                } else {
+                    self.increment_program_counter();
+                }
+            },
             0x6000 => {
-                let index = ((op_code & 0x0F00) >> 8) as usize;
-                self.cpu_register[index] = (op_code & 0x00FF) as u8;
+                self.cpu_register[x_index] = (op_code & 0x00FF) as u8;
                 self.increment_program_counter();
             },
             0x7000 => {
-                let index = ((op_code & 0x0F00) >> 8) as usize;
                 let addition = (op_code & 0x00FF) as u8;
-                self.cpu_register[index] += addition;
+                self.cpu_register[x_index] = self.cpu_register[x_index].wrapping_add(addition);
                 self.increment_program_counter();
+            },
+            0x8000 => match op_code & 0x000F {
+                0x0006 => {
+                    self.cpu_register[0xF] = self.cpu_register[x_index] & 0x1;
+                    self.cpu_register[x_index] >>= 1;
+                    self.increment_program_counter();
+                },
+                0x000E => {
+                    self.cpu_register[0xF] = (self.cpu_register[x_index] >> 7) & 0x1;
+                    self.cpu_register[x_index] <<= 1;
+                    self.increment_program_counter();
+                },
+                _ => println!("{} with 8", op_code)
             },
             0xA000 => {
                 self.i_register = op_code & 0x0FFF;
@@ -101,13 +142,13 @@ impl Chip8 {
             },
             0xC000 => {
                 let random_number: u8 = rand::thread_rng().gen();
-                let index = ((op_code & 0x0F00) >> 8) as usize;
-                self.cpu_register[index] = (u16::from(random_number) & (op_code & 0x00FF)) as u8;
+                self.cpu_register[x_index] = (u16::from(random_number) & (op_code & 0x00FF)) as u8;
                 self.increment_program_counter();
             },
             0xD000 => {
-                let x = self.cpu_register[((op_code & 0x0F00) >> 8) as usize] as u16;
-                let y = self.cpu_register[((op_code & 0x00F0) >> 4) as usize] as u16;
+                let x = self.cpu_register[x_index] as u16;
+                let y = self.cpu_register[y_index] as u16;
+
                 let height = op_code & 0x000F;
                 let mut pixel: u16;
 
@@ -125,28 +166,62 @@ impl Chip8 {
                 }
                 self.is_draw = true;
                 self.increment_program_counter();
+            },
+            0xF000 => {
+                match op_code & 0x00FF {
+                    0x0007 => {
+                        self.cpu_register[x_index] = self.delay_timer;
+                        self.increment_program_counter();
+                    },
+                    0x000A => {
+                        if let Some(i) = self.keyboard_input {
+                            self.cpu_register[x_index] = i;
+                            self.increment_program_counter();
+                        }
+                    },
+                    0x001E => {
+                        self.i_register += u16::from(self.cpu_register[x_index]);
+                        self.increment_program_counter();
+                    },
+                    0x0015 => {
+                        self.delay_timer = self.cpu_register[x_index];
+                        self.increment_program_counter();
+                    },
+                    0x0029 => {
+                        self.i_register = (5 * self.cpu_register[x_index]) as u16;
+                        self.increment_program_counter();
+                    },
+                    0x0055 => {
+                        for i in 0..=x_index {
+                            self.memory[self.i_register as usize + i] = self.cpu_register[i];
+                        }
+                        self.increment_program_counter();
+                    }
+                    0x0065 => {
+                        for i in 0..=x_index {
+                            self.cpu_register[i] = self.memory[self.i_register as usize + i];
+                        }
+                        self.increment_program_counter();
+                    },
+                    _ => println!("Unknown code: {}", op_code)
+                }
             }
-            _ => println!("Unknown code")
+            _ => println!("Unknown code: {}", op_code)
         }
-    }
 
-    pub fn draw(&self, canvas: &mut WindowCanvas) {
-        canvas.clear();
-
-        let mut row = 0;
-        for (index, element) in self.gfx.iter().enumerate() {
-            if *element == 1 {
-                canvas.set_draw_color(Color::WHITE);
-            } else {
-                canvas.set_draw_color(Color::BLACK);
-            }
-            canvas.fill_rect(Rect::new(((index as u32 % 64) * PIXEL_SIZE) as i32, (row * PIXEL_SIZE) as i32, PIXEL_SIZE, PIXEL_SIZE)).expect("Draw error");
-            if (index + 1) % 64 == 0 {
-                row += 1;
-            }
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
         }
 
-        canvas.present();
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        if self.sound_timer > 0 {
+            if self.sound_timer == 1 {
+                println!("BEEP");
+            }
+            self.sound_timer -= 1;
+        }
+
+        if let Some(x) = self.keyboard_input {
+            println!("Pressed key: {}", x);
+        }
     }
 }
