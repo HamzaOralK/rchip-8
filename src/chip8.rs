@@ -65,7 +65,7 @@ impl Chip8 {
         self.gfx = [0; 0x800];
     }
 
-    pub fn load_rom(&mut self, buffer:  [u8; 0xE00]){
+    pub fn load_rom(&mut self, buffer:  &[u8]){
         for (index, element) in buffer.iter().enumerate() {
             self.memory[512 + index] = *element;
         }

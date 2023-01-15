@@ -2,6 +2,7 @@ mod chip8;
 mod sdl2_utility;
 mod consts;
 
+use std::env;
 use std::fs::File;
 use std::io::{Read};
 use std::thread::sleep;
@@ -12,20 +13,20 @@ use sdl2::keyboard::Keycode;
 use crate::sdl2_utility::{get_chip8_keyboard_input, setup_sdl};
 use crate::chip8::Chip8;
 
+static DEFAULT_ROM: &'static [u8] = include_bytes!("./roms/IBM Logo.ch8");
+
 fn main() {
-    // let mut f = File::open("./roms/Keypad Test.ch8").expect("File not found");
-    // let mut f = File::open("./roms/IBM Logo.ch8").expect("File not found");
-    // let mut f = File::open("./roms/Maze (alt) [David Winter, 199x].ch8").expect("File not found");
-    // let mut f = File::open("./roms/Particle Demo [zeroZshadow, 2008].ch8").expect("File not found");
-    // let mut f = File::open("./roms/Guess [David Winter].ch8").expect("File not found");
-    let mut f = File::open("./roms/Tetris [Fran Dachille, 1991].ch8").expect("File not found");
-
-    let mut buffer = [0; 0xE00];
-
-    let _ = f.read(&mut buffer).expect("Read error");
+    let args: Vec<String> = env::args().collect();
 
     let mut chip = Chip8::initialize();
-    chip.load_rom(buffer);
+    if let Some(file) = args.get(1) {
+        let mut f = File::open(file).expect("File not found");
+        let mut buffer = Vec::new();
+        let _ = f.read_to_end(&mut buffer).expect("Read error");
+        chip.load_rom(&buffer);
+    } else {
+        chip.load_rom(DEFAULT_ROM);
+    }
 
     let (mut canvas, mut event_pump) = setup_sdl();
 
