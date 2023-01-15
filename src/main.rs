@@ -13,8 +13,13 @@ use crate::sdl2_utility::{get_chip8_keyboard_input, setup_sdl};
 use crate::chip8::Chip8;
 
 fn main() {
-    let mut f = File::open("./roms/Keypad Test.ch8").expect("File not found");
+    // let mut f = File::open("./roms/Keypad Test.ch8").expect("File not found");
     // let mut f = File::open("./roms/IBM Logo.ch8").expect("File not found");
+    // let mut f = File::open("./roms/Maze (alt) [David Winter, 199x].ch8").expect("File not found");
+    // let mut f = File::open("./roms/Particle Demo [zeroZshadow, 2008].ch8").expect("File not found");
+    // let mut f = File::open("./roms/Guess [David Winter].ch8").expect("File not found");
+    let mut f = File::open("./roms/Tetris [Fran Dachille, 1991].ch8").expect("File not found");
+
     let mut buffer = [0; 0xE00];
 
     let _ = f.read(&mut buffer).expect("Read error");

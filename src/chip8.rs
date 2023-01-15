@@ -111,6 +111,20 @@ impl Chip8 {
                     self.increment_program_counter();
                 }
             },
+            0x4000 => {
+                if self.cpu_register[x_index] != ((op_code & 0x00FF) as u8) {
+                    self.skip_next_instruction();
+                } else {
+                    self.increment_program_counter();
+                }
+            },
+            0x5000 => {
+              if self.cpu_register[x_index] == self.cpu_register[y_index] {
+                  self.skip_next_instruction();
+              } else {
+                  self.increment_program_counter();
+              }
+            },
             0x6000 => {
                 self.cpu_register[x_index] = (op_code & 0x00FF) as u8;
                 self.increment_program_counter();
@@ -121,9 +135,55 @@ impl Chip8 {
                 self.increment_program_counter();
             },
             0x8000 => match op_code & 0x000F {
+                0x0000 => {
+                    self.cpu_register[x_index] = self.cpu_register[y_index];
+                    self.increment_program_counter();
+                },
+                0x0001 => {
+                    self.cpu_register[x_index] |= self.cpu_register[y_index];
+                    self.increment_program_counter();
+                },
+                0x0002 => {
+                    self.cpu_register[x_index] &= self.cpu_register[y_index];
+                    self.increment_program_counter();
+                },
+                0x0003 => {
+                    self.cpu_register[x_index] ^= self.cpu_register[y_index];
+                    self.increment_program_counter();
+                },
+                0x0004 => {
+                    if let Some(c) = self.cpu_register[x_index].checked_add(self.cpu_register[y_index]) {
+                        self.cpu_register[x_index] = c;
+                        self.cpu_register[0xF] = 0;
+                    } else {
+                        self.cpu_register[x_index] = self.cpu_register[x_index].wrapping_add(self.cpu_register[y_index]);
+                        self.cpu_register[0xF] = 1;
+                    }
+                    self.increment_program_counter();
+                },
+                0x0005 => {
+                    if let Some(c) = self.cpu_register[x_index].checked_sub(self.cpu_register[y_index]) {
+                        self.cpu_register[x_index] = c;
+                        self.cpu_register[0xF] = 1;
+                    } else {
+                        self.cpu_register[x_index] = self.cpu_register[x_index].wrapping_sub(self.cpu_register[y_index]);
+                        self.cpu_register[0xF] = 0;
+                    }
+                    self.increment_program_counter();
+                },
                 0x0006 => {
                     self.cpu_register[0xF] = self.cpu_register[x_index] & 0x1;
                     self.cpu_register[x_index] >>= 1;
+                    self.increment_program_counter();
+                },
+                0x0007 => {
+                    if let Some(c) = self.cpu_register[y_index].checked_sub(self.cpu_register[x_index]) {
+                        self.cpu_register[x_index] = c;
+                        self.cpu_register[0xF] = 1;
+                    } else {
+                        self.cpu_register[x_index] = self.cpu_register[y_index].wrapping_sub(self.cpu_register[x_index]);
+                        self.cpu_register[0xF] = 0;
+                    }
                     self.increment_program_counter();
                 },
                 0x000E => {
@@ -132,6 +192,13 @@ impl Chip8 {
                     self.increment_program_counter();
                 },
                 _ => println!("{} with 8", op_code)
+            },
+            0x9000 => {
+              if self.cpu_register[x_index] != self.cpu_register[y_index] {
+                  self.skip_next_instruction();
+              } else {
+                  self.increment_program_counter();
+              }
             },
             0xA000 => {
                 self.i_register = op_code & 0x0FFF;
@@ -167,6 +234,23 @@ impl Chip8 {
                 self.is_draw = true;
                 self.increment_program_counter();
             },
+            0xE000 => match op_code & 0x00FF {
+                0x009E => {
+                    if self.keyboard_input == Some(self.cpu_register[x_index]) {
+                        self.skip_next_instruction();
+                    } else {
+                        self.increment_program_counter();
+                    }
+                },
+                0x00A1 => {
+                    if self.keyboard_input != Some(self.cpu_register[x_index]) {
+                        self.skip_next_instruction();
+                    } else {
+                        self.increment_program_counter();
+                    }
+                },
+                _ => {}
+            }
             0xF000 => {
                 match op_code & 0x00FF {
                     0x0007 => {
@@ -179,16 +263,26 @@ impl Chip8 {
                             self.increment_program_counter();
                         }
                     },
-                    0x001E => {
-                        self.i_register += u16::from(self.cpu_register[x_index]);
-                        self.increment_program_counter();
-                    },
                     0x0015 => {
                         self.delay_timer = self.cpu_register[x_index];
                         self.increment_program_counter();
                     },
+                    0x0018 => {
+                        self.sound_timer = self.cpu_register[x_index];
+                        self.increment_program_counter();
+                    },
+                    0x001E => {
+                        self.i_register += u16::from(self.cpu_register[x_index]);
+                        self.increment_program_counter();
+                    },
                     0x0029 => {
                         self.i_register = (5 * self.cpu_register[x_index]) as u16;
+                        self.increment_program_counter();
+                    },
+                    0x0033 => {
+                        self.memory[self.i_register as usize] = (self.cpu_register[x_index] % 100) / 100;
+                        self.memory[(self.i_register + 1) as usize] = (self.cpu_register[x_index] % 100) / 10;
+                        self.memory[(self.i_register + 2) as usize] = (self.cpu_register[x_index] % 10) / 1;
                         self.increment_program_counter();
                     },
                     0x0055 => {
@@ -218,10 +312,6 @@ impl Chip8 {
                 println!("BEEP");
             }
             self.sound_timer -= 1;
-        }
-
-        if let Some(x) = self.keyboard_input {
-            println!("Pressed key: {}", x);
         }
     }
 }
