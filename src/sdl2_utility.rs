@@ -1,3 +1,4 @@
+use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use sdl2::EventPump;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -5,10 +6,48 @@ use sdl2::render::WindowCanvas;
 use sdl2::keyboard::Keycode;
 use crate::consts::PIXEL_SIZE;
 
+pub struct SquareWave {
+    phase_inc: f32,
+    phase: f32,
+    volume: f32
+}
 
-pub fn setup_sdl() -> (Box<WindowCanvas>, Box<EventPump>) {
+impl AudioCallback for SquareWave {
+    type Channel = f32;
+
+    fn callback(&mut self, out: &mut [f32]) {
+        // Generate a square wave
+        for x in out.iter_mut() {
+            *x = if self.phase <= 0.5 {
+                self.volume
+            } else {
+                -self.volume
+            };
+            self.phase = (self.phase + self.phase_inc) % 1.0;
+        }
+    }
+}
+
+pub fn setup_sdl() -> (Box<WindowCanvas>, Box<AudioDevice<SquareWave>>, Box<EventPump>) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
+
+    let audio_subsystem = sdl_context.audio().unwrap();
+    let desired_spec = AudioSpecDesired {
+        freq: Some(44100),
+        channels: Some(1),  // mono
+        samples: None       // default sample size
+    };
+
+    let device = audio_subsystem.open_playback(None, &desired_spec, |spec| {
+        // initialize the audio callback
+        SquareWave {
+            phase_inc: 440.0 / spec.freq as f32,
+            phase: 0.0,
+            volume: 0.25
+        }
+    }).unwrap();
+
     let window = video_subsystem.window(
         "rust-sdl2 demo",
         64 * PIXEL_SIZE,
@@ -26,7 +65,7 @@ pub fn setup_sdl() -> (Box<WindowCanvas>, Box<EventPump>) {
 
     let event_pump = sdl_context.event_pump().unwrap();
 
-    (Box::new(canvas), Box::new(event_pump))
+    (Box::new(canvas), Box::new(device), Box::new(event_pump))
 }
 
 pub fn draw(canvas: &mut WindowCanvas, gfx: [u8; 0x800],) {

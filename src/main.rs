@@ -2,10 +2,10 @@ mod chip8;
 mod sdl2_utility;
 mod consts;
 
-use std::env;
+use std::{env, thread};
 use std::fs::File;
 use std::io::{Read};
-use std::thread::sleep;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -13,7 +13,7 @@ use sdl2::keyboard::Keycode;
 use crate::sdl2_utility::{get_chip8_keyboard_input, setup_sdl};
 use crate::chip8::Chip8;
 
-static DEFAULT_ROM: &'static [u8] = include_bytes!("./roms/IBM Logo.ch8");
+static DEFAULT_ROM: &[u8] = include_bytes!("./roms/IBM Logo.ch8");
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -28,13 +28,39 @@ fn main() {
         chip.load_rom(DEFAULT_ROM);
     }
 
-    let (mut canvas, mut event_pump) = setup_sdl();
+    let (mut canvas, audio_device, mut event_pump) = setup_sdl();
+
+    let sound_check = Arc::new(Mutex::new(false));
+
+    let z = Arc::clone(&sound_check);
+    thread::spawn(move || {
+        loop {
+            let mut t = z.lock().unwrap();
+            if *t {
+                thread::sleep(Duration::from_millis(1000));
+                *t = false;
+            }
+        }
+    });
 
     'running: loop {
         chip.cycle();
 
         if chip.is_draw {
             sdl2_utility::draw(&mut canvas, chip.gfx);
+        }
+
+        if chip.is_sound {
+            let y = Arc::clone(&sound_check);
+            let mut i = y.lock().unwrap();
+            *i = true;
+        }
+
+        let t = Arc::clone(&sound_check);
+        if *t.lock().unwrap() {
+            audio_device.resume();
+        } else {
+            audio_device.pause();
         }
 
         for event in event_pump.poll_iter() {
@@ -52,6 +78,6 @@ fn main() {
             }
         }
 
-        sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 }

@@ -1,5 +1,4 @@
 use rand::Rng;
-use crate::consts::PIXEL_SIZE;
 
 const CHIP8_FONT_SET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -30,6 +29,7 @@ pub struct Chip8 {
     stack_pointer: usize,
     delay_timer: u8,
     sound_timer: u8,
+    pub is_sound: bool,
     pub is_draw: bool,
     pub keyboard_input: Option<u8>
 }
@@ -49,6 +49,7 @@ impl Chip8 {
             program_counter: 0x200,
             gfx: [0; 0x800],
             is_draw: false,
+            is_sound: false,
             stack: [0; 0xC],
             stack_pointer: 0,
             delay_timer: 0,
@@ -282,7 +283,7 @@ impl Chip8 {
                     0x0033 => {
                         self.memory[self.i_register as usize] = (self.cpu_register[x_index] % 100) / 100;
                         self.memory[(self.i_register + 1) as usize] = (self.cpu_register[x_index] % 100) / 10;
-                        self.memory[(self.i_register + 2) as usize] = (self.cpu_register[x_index] % 10) / 1;
+                        self.memory[(self.i_register + 2) as usize] = self.cpu_register[x_index] % 10;
                         self.increment_program_counter();
                     },
                     0x0055 => {
@@ -309,9 +310,11 @@ impl Chip8 {
 
         if self.sound_timer > 0 {
             if self.sound_timer == 1 {
-                println!("BEEP");
+                self.is_sound = true;
             }
             self.sound_timer -= 1;
+        } else {
+            self.is_sound = false;
         }
     }
 }
